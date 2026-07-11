@@ -28,6 +28,8 @@ cd lab2_preprocessing
 ```
 
 ## 1. Median Filter
+<img width="965" height="546" alt="image" src="https://github.com/user-attachments/assets/c8473fc2-b881-4a08-a82b-118e9f820847" />
+
 
 ### 1.1. Processing Flow
 
@@ -130,6 +132,8 @@ SSIM: 0.9573
 Higher PSNR and SSIM values closer to `1` indicate better similarity to the reference image.
 
 ## 2. RGB to Grayscale Conversion
+<img width="1177" height="357" alt="image" src="https://github.com/user-attachments/assets/7459d0d6-decb-4850-b4a5-24fc443aaa77" />
+
 
 ### 2.1. Processing Flow
 
