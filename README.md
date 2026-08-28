@@ -131,6 +131,10 @@ SSIM: 0.9573
 
 Higher PSNR and SSIM values closer to `1` indicate better similarity to the reference image.
 
+### 1.4. Visualize median filter algorithm
+
+link: https://qohwxv.github.io/Median_filter-rgb2grayscale/visualize/
+
 ## 2. RGB to Grayscale Conversion
 <img width="1177" height="357" alt="image" src="https://github.com/user-attachments/assets/7459d0d6-decb-4850-b4a5-24fc443aaa77" />
 
