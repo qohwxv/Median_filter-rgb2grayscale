@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verilog 3x3 Median Filter Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .pixel-cell {
+            transition: all 0.2s ease;
+        }
+        
+        .pixel-cell:hover {
+            transform: scale(1.1);
+            z-index: 20;
+        }
+
+        .glow-active {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+
+        .glow-success {
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 border-b border-slate-800 gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-3">
+                    <i class="fa-solid fa-microchip text-cyan-400"></i>
+                    Verilog 3x3 Median Filter Visualizer
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">
+                    Trực quan hóa hoạt động phần cứng Verilog RTL: Line Buffers, Zero-Padding và Cây tính Median 9 phần tử.
+                </p>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <div class="bg-slate-900 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-4 text-xs code-font">
+                    <div><span class="text-slate-400">WIDTH:</span> <span class="text-cyan-400 font-bold" id="param-width">6</span></div>
+                    <div><span class="text-slate-400">LENGTH:</span> <span class="text-cyan-400 font-bold" id="param-length">6</span></div>
+                    <div><span class="text-slate-400">SIZE:</span> <span class="text-cyan-400 font-bold">8-bit</span></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Simulation Control Bar -->
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-800 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 sticky top-4 z-50 shadow-2xl">
+            <div class="flex items-center gap-3">
+                <button id="btn-play" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold transition flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-play"></i> Run
+                </button>
+                <button id="btn-step" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-semibold transition flex items-center gap-2 text-sm">
+                    <i class="fa-solid fa-forward-step"></i> Step Clock
+                </button>
+                <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl font-semibold transition flex items-center gap-2 text-sm border border-slate-700">
+                    <i class="fa-solid fa-rotate-left"></i> Reset
+                </button>
+            </div>
+
+            <!-- Pattern Presets -->
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-slate-400 font-medium">Hình Mẫu:</span>
+                <select id="select-pattern" class="bg-slate-800 border border-slate-700 text-sm text-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500">
+                    <option value="salt_pepper">Nhiễu Muối & Tiêu (Salt & Pepper)</option>
+                    <option value="cross">Hình Chữ Thập + Nhiễu</option>
+                    <option value="gradient">Gradient + Biến Động</option>
+                </select>
+            </div>
+
+            <!-- Speed Control -->
+            <div class="flex items-center gap-3 min-w-[180px]">
+                <span class="text-xs text-slate-400 font-medium"><i class="fa-solid fa-gauge-high mr-1"></i>Tốc độ:</span>
+                <input type="range" id="speed-range" min="50" max="1000" value="300" class="w-full accent-blue-500 bg-slate-800 h-2 rounded-lg cursor-pointer">
+            </div>
+        </div>
+
+        <!-- System State Overview Counters -->
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 code-font text-xs">
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 block mb-1">CLK Cycle</span>
+                <span id="reg-clk" class="text-lg font-bold text-cyan-400">0</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 block mb-1">shift_cnt</span>
+                <span id="reg-shift-cnt" class="text-lg font-bold text-amber-400">0</span>
+                <span class="text-[10px] text-slate-500 block">THRESHOLD = 8</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 block mb-1">in_col / in_cnt</span>
+                <span id="reg-in-col" class="text-lg font-bold text-purple-400">0</span>
+                <span id="reg-in-cnt" class="text-[10px] text-slate-400 block">cnt: 0</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 block mb-1">out_row, out_col</span>
+                <span id="reg-out-pos" class="text-lg font-bold text-emerald-400">(0, 0)</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 block mb-1">valid_in / valid_out</span>
+                <div class="flex items-center gap-2">
+                    <span id="flag-valid-in" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500">IN</span>
+                    <span id="flag-valid-out" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500">OUT</span>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-slate-400 block mb-1">pixel_in / pixel_out</span>
+                <span id="val-pixel-io" class="text-xs font-bold text-blue-400">IN: 0 | OUT: --</span>
+            </div>
+        </div>
+
+        <!-- Main Workspace Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Panel: Input Image Streaming & Line Buffers (5 Cols) -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- Input Matrix Grid -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-table-cells text-blue-400"></i>
+                            Input Image Buffer (6x6)
+                        </h2>
+                        <span class="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg">Stream Pixel Input</span>
+                    </div>
+
+                    <div id="grid-input" class="grid grid-cols-6 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                        <!-- Generated via JS -->
+                    </div>
+                </div>
+
+                <!-- Line Buffers Visualizer -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+                    <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-memory text-purple-400"></i>
+                        Line Buffers (SRAM Registers)
+                    </h2>
+
+                    <!-- Pointer indicator -->
+                    <div class="code-font text-xs text-purple-400 flex items-center justify-between px-1">
+                        <span>in_col Pointer: <strong id="lb-pointer-col">0</strong></span>
+                        <span class="text-slate-500">Reads & Writes at same col</span>
+                    </div>
+
+                    <!-- Line Buffer 2 -->
+                    <div>
+                        <div class="text-xs text-slate-400 mb-1 flex justify-between">
+                            <span>line_buf2 [Hàng cách 2]</span>
+                            <span class="code-font text-purple-300" id="lb2-val">lb2_out = 0</span>
+                        </div>
+                        <div id="grid-lb2" class="grid grid-cols-6 gap-1 bg-slate-950 p-2 rounded-lg border border-slate-800"></div>
+                    </div>
+
+                    <!-- Line Buffer 1 -->
+                    <div>
+                        <div class="text-xs text-slate-400 mb-1 flex justify-between">
+                            <span>line_buf1 [Hàng trước]</span>
+                            <span class="code-font text-cyan-300" id="lb1-val">lb1_out = 0</span>
+                        </div>
+                        <div id="grid-lb1" class="grid grid-cols-6 gap-1 bg-slate-950 p-2 rounded-lg border border-slate-800"></div>
+                    </div>
+                </div>
+
+                <!-- Output Image Matrix -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-wand-magic-sparkles text-emerald-400"></i>
+                            Filtered Output Grid
+                        </h2>
+                        <span class="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg">Stream Pixel Output</span>
+                    </div>
+
+                    <div id="grid-output" class="grid grid-cols-6 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                        <!-- Generated via JS -->
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Panel: Shift Register Window P, Masked W, & Sorting Tree Architecture (7 Cols) -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- 3x3 Window Architecture: P vs W -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                    <h2 class="font-semibold text-slate-200 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-border-all text-amber-400"></i>
+                        Cửa Sổ Dịch Raw (P) & Cửa Sổ Zero-Padding (W)
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- P Matrix (Raw Shift Register) -->
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <div class="text-xs font-bold text-slate-300 mb-2 flex items-center justify-between">
+                                <span>Ma Trận P (Shift Registers)</span>
+                                <span class="text-[10px] text-slate-500">Dữ liệu thô</span>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-2 text-center code-font text-xs">
+                                <div id="p11" class="p-2 bg-slate-900 border border-slate-700 rounded">p11<br><span class="val text-cyan-300 font-bold">0</span></div>
+                                <div id="p12" class="p-2 bg-slate-900 border border-slate-700 rounded">p12<br><span class="val text-cyan-300 font-bold">0</span></div>
+                                <div id="p13" class="p-2 bg-slate-900 border border-slate-700 rounded">p13<br><span class="val text-cyan-300 font-bold">0</span></div>
+
+                                <div id="p21" class="p-2 bg-slate-900 border border-slate-700 rounded">p21<br><span class="val text-cyan-300 font-bold">0</span></div>
+                                <div id="p22" class="p-2 bg-amber-500/20 border border-amber-500 rounded font-bold">p22 (Tâm)<br><span class="val text-amber-300">0</span></div>
+                                <div id="p23" class="p-2 bg-slate-900 border border-slate-700 rounded">p23<br><span class="val text-cyan-300 font-bold">0</span></div>
+
+                                <div id="p31" class="p-2 bg-slate-900 border border-slate-700 rounded">p31<br><span class="val text-cyan-300 font-bold">0</span></div>
+                                <div id="p32" class="p-2 bg-slate-900 border border-slate-700 rounded">p32<br><span class="val text-cyan-300 font-bold">0</span></div>
+                                <div id="p33" class="p-2 bg-slate-900 border border-slate-700 rounded">p33<br><span class="val text-cyan-300 font-bold">0</span></div>
+                            </div>
+                        </div>
+
+                        <!-- W Matrix (Padded Wires) -->
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <div class="text-xs font-bold text-slate-300 mb-2 flex items-center justify-between">
+                                <span>Ma Trận W (Padded Wires)</span>
+                                <span class="text-[10px] text-amber-400">Ép 0 nếu vượt biên</span>
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-2 text-center code-font text-xs">
+                                <div id="w11" class="p-2 bg-slate-900 border border-slate-700 rounded">w11<br><span class="val text-emerald-400 font-bold">0</span></div>
+                                <div id="w12" class="p-2 bg-slate-900 border border-slate-700 rounded">w12<br><span class="val text-emerald-400 font-bold">0</span></div>
+                                <div id="w13" class="p-2 bg-slate-900 border border-slate-700 rounded">w13<br><span class="val text-emerald-400 font-bold">0</span></div>
+
+                                <div id="w21" class="p-2 bg-slate-900 border border-slate-700 rounded">w21<br><span class="val text-emerald-400 font-bold">0</span></div>
+                                <div id="w22" class="p-2 bg-emerald-500/20 border border-emerald-500 rounded font-bold">w22 (Tâm)<br><span class="val text-emerald-300">0</span></div>
+                                <div id="w23" class="p-2 bg-slate-900 border border-slate-700 rounded">w23<br><span class="val text-emerald-400 font-bold">0</span></div>
+
+                                <div id="w31" class="p-2 bg-slate-900 border border-slate-700 rounded">w31<br><span class="val text-emerald-400 font-bold">0</span></div>
+                                <div id="w32" class="p-2 bg-slate-900 border border-slate-700 rounded">w32<br><span class="val text-emerald-400 font-bold">0</span></div>
+                                <div id="w33" class="p-2 bg-slate-900 border border-slate-700 rounded">w33<br><span class="val text-emerald-400 font-bold">0</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 9-Element Median Sorting Network Tree -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+                    <h2 class="font-semibold text-slate-200 flex items-center justify-between">
+                        <span class="flex items-center gap-2">
+                            <i class="fa-solid fa-network-wired text-indigo-400"></i>
+                            Cây Sắp Xép Lọc Median Combinational Logic
+                        </span>
+                        <span class="text-xs text-indigo-400 font-mono">Parallel Sorting Tree</span>
+                    </h2>
+
+                    <!-- Stage 1: Row Sorting -->
+                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <div class="text-xs font-bold text-slate-400">Tầng 1: Tìm (MIN, MED, MAX) cho từng hàng của W</div>
+                        
+                        <div class="grid grid-cols-3 gap-3 code-font text-xs">
+                            <!-- Row 1 -->
+                            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-500">Hàng 1 (w11,w12,w13)</div>
+                                <div class="mt-1">Min1: <span id="r1-min" class="text-cyan-400 font-bold">0</span></div>
+                                <div>Med1: <span id="r1-med" class="text-amber-400 font-bold">0</span></div>
+                                <div>Max1: <span id="r1-max" class="text-rose-400 font-bold">0</span></div>
+                            </div>
+
+                            <!-- Row 2 -->
+                            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-500">Hàng 2 (w21,w22,w23)</div>
+                                <div class="mt-1">Min2: <span id="r2-min" class="text-cyan-400 font-bold">0</span></div>
+                                <div>Med2: <span id="r2-med" class="text-amber-400 font-bold">0</span></div>
+                                <div>Max2: <span id="r2-max" class="text-rose-400 font-bold">0</span></div>
+                            </div>
+
+                            <!-- Row 3 -->
+                            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-500">Hàng 3 (w31,w32,w33)</div>
+                                <div class="mt-1">Min3: <span id="r3-min" class="text-cyan-400 font-bold">0</span></div>
+                                <div>Med3: <span id="r3-med" class="text-amber-400 font-bold">0</span></div>
+                                <div>Max3: <span id="r3-max" class="text-rose-400 font-bold">0</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stage 2: Cross Reduction -->
+                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <div class="text-xs font-bold text-slate-400">Tầng 2: Tổng hợp dọc theo cột</div>
+                        
+                        <div class="grid grid-cols-3 gap-3 code-font text-xs text-center">
+                            <div class="bg-slate-900 p-2.5 rounded border border-cyan-500/30">
+                                <div class="text-[10px] text-slate-400">max_of_mins</div>
+                                <div id="val-max-of-mins" class="text-sm font-bold text-cyan-400 mt-1">0</div>
+                            </div>
+                            <div class="bg-slate-900 p-2.5 rounded border border-amber-500/30">
+                                <div class="text-[10px] text-slate-400">med_of_meds</div>
+                                <div id="val-med-of-meds" class="text-sm font-bold text-amber-400 mt-1">0</div>
+                            </div>
+                            <div class="bg-slate-900 p-2.5 rounded border border-rose-500/30">
+                                <div class="text-[10px] text-slate-400">min_of_maxs</div>
+                                <div id="val-min-of-maxs" class="text-sm font-bold text-rose-400 mt-1">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stage 3: Final Median Result -->
+                    <div class="bg-gradient-to-r from-emerald-950 to-slate-950 p-4 rounded-xl border border-emerald-500/40 flex items-center justify-between">
+                        <div>
+                            <div class="text-xs font-bold text-emerald-400">Tầng 3: Final Median Output</div>
+                            <div class="text-[11px] text-slate-400 code-font">med3(max_of_mins, med_of_meds, min_of_maxs)</div>
+                        </div>
+                        <div class="code-font text-right">
+                            <span id="val-final-median" class="text-2xl font-bold text-emerald-300">0</span>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- Explanation Footer -->
+        <footer class="bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-xs text-slate-400 space-y-2">
+            <p><strong class="text-slate-200">Ghi chú vận hành Hardware:</strong></p>
+            <ul class="list-disc list-inside space-y-1 text-slate-400">
+                <li><strong class="text-amber-400">Shift Delay:</strong> Khi <code class="code-font text-cyan-400">shift_cnt &gt;= WIDTH + 2</code> (ở đây là 8 cycles), pipeline lấp đầy 3x3 window đầu tiên và tín hiệu <code class="code-font text-emerald-400">valid_out</code> bắt đầu lên mức 1.</li>
+                <li><strong class="text-amber-400">Non-blocking (<code class="code-font">&lt;=</code>):</strong> <code class="code-font">line_buf2</code> nhận giá trị cũ của <code class="code-font">line_buf1</code> trước chu kỳ đồng hồ.</li>
+                <li><strong class="text-amber-400">Zero-Padding Logic:</strong> Thay vì ghi đè bộ nhớ, ma trận wire <code class="code-font">W</code> chủ động thay giá trị ngoài biên bằng <code class="code-font">0</code> dựa vào tọa độ <code class="code-font">out_row, out_col</code>.</li>
+            </ul>
+        </footer>
+
+    </div>
+
+    <!-- JavaScript Simulator Implementation -->
+    <script>
+        const WIDTH = 6;
+        const LENGTH = 6;
+
+        // Image Presets
+        const PRESETS = {
+            salt_pepper: [
+                [100, 105, 255, 110, 108, 102],
+                [102, 0,   108, 112, 255, 110],
+                [110, 115, 112, 0,   105, 104],
+                [255, 108, 106, 110, 112, 0],
+                [104, 102, 255, 108, 105, 106],
+                [100, 0,   106, 104, 102, 100]
+            ],
+            cross: [
+                [10,  10,  200, 200, 10,  10],
+                [10,  10,  255, 200, 10,  10],
+                [200, 200, 255, 255, 200, 200],
+                [200, 200, 255, 0,   200, 200],
+                [10,  10,  200, 200, 10,  10],
+                [10,  10,  200, 200, 10,  10]
+            ],
+            gradient: [
+                [10,  30,  50,  70,  255, 110],
+                [30,  50,  0,   90,  110, 130],
+                [50,  70,  90,  110, 130, 150],
+                [70,  255, 110, 130, 0,   170],
+                [90,  110, 130, 150, 170, 190],
+                [110, 130, 150, 170, 190, 210]
+            ]
+        };
+
+        let currentImage = JSON.parse(JSON.stringify(PRESETS.salt_pepper));
+
+        // State Registers
+        let clk = 0;
+        let out_col = 0;
+        let out_row = 0;
+        let in_col = 0;
+        let in_cnt = 0;
+        let out_cnt = 0;
+        let shift_cnt = 0;
+        let valid_out = false;
+        let pixel_out = 0;
+
+        let line_buf1 = new Array(WIDTH).fill(0);
+        let line_buf2 = new Array(WIDTH).fill(0);
+
+        let P = {
+            p11: 0, p12: 0, p13: 0,
+            p21: 0, p22: 0, p23: 0,
+            p31: 0, p32: 0, p33: 0
+        };
+
+        let outputMatrix = Array.from({ length: LENGTH }, () => new Array(WIDTH).fill(null));
+
+        let isRunning = false;
+        let timer = null;
+
+        // DOM Elements
+        const gridInput = document.getElementById('grid-input');
+        const gridOutput = document.getElementById('grid-output');
+        const gridLb1 = document.getElementById('grid-lb1');
+        const gridLb2 = document.getElementById('grid-lb2');
+
+        // Helper Functions for Sorting Logic
+        const min2 = (a, b) => (a < b ? a : b);
+        const max2 = (a, b) => (a > b ? a : b);
+        const min3 = (a, b, c) => min2(min2(a, b), c);
+        const max3 = (a, b, c) => max2(max2(a, b), c);
+        const med3 = (a, b, c) => max2(min2(a, b), min2(max2(a, b), c));
+
+        // Initialize UI Grids
+        function initGrids() {
+            gridInput.innerHTML = '';
+            gridOutput.innerHTML = '';
+            gridLb1.innerHTML = '';
+            gridLb2.innerHTML = '';
+
+            for (let r = 0; r < LENGTH; r++) {
+                for (let c = 0; c < WIDTH; c++) {
+                    const val = currentImage[r][c];
+                    const cell = document.createElement('div');
+                    cell.id = `in-cell-${r}-${c}`;
+                    cell.className = 'pixel-cell flex flex-col items-center justify-center p-2 rounded-lg border border-slate-800 text-xs font-mono font-bold cursor-pointer transition';
+                    cell.style.backgroundColor = `rgb(${val}, ${val}, ${val})`;
+                    cell.style.color = val > 128 ? '#000' : '#fff';
+                    cell.innerHTML = `<span>${val}</span><span class="text-[9px] opacity-60">(${r},${c})</span>`;
+                    gridInput.appendChild(cell);
+
+                    const outCell = document.createElement('div');
+                    outCell.id = `out-cell-${r}-${c}`;
+                    outCell.className = 'pixel-cell flex flex-col items-center justify-center p-2 rounded-lg border border-slate-900 bg-slate-950 text-xs font-mono text-slate-700';
+                    outCell.innerHTML = `<span>--</span><span class="text-[9px] opacity-40">(${r},${c})</span>`;
+                    gridOutput.appendChild(outCell);
+                }
+            }
+
+            for (let c = 0; c < WIDTH; c++) {
+                const cell1 = document.createElement('div');
+                cell1.id = `lb1-cell-${c}`;
+                cell1.className = 'p-1.5 bg-slate-900 border border-slate-800 rounded text-center font-mono text-xs text-cyan-300';
+                cell1.innerText = '0';
+                gridLb1.appendChild(cell1);
+
+                const cell2 = document.createElement('div');
+                cell2.id = `lb2-cell-${c}`;
+                cell2.className = 'p-1.5 bg-slate-900 border border-slate-800 rounded text-center font-mono text-xs text-purple-300';
+                cell2.innerText = '0';
+                gridLb2.appendChild(cell2);
+            }
+        }
+
+        // Compute Combinational W matrix and Median Logic
+        function computeCombinational() {
+            // Compute Masked W
+            const W = {
+                w11: (out_row === 0 || out_col === 0) ? 0 : P.p11,
+                w12: (out_row === 0) ? 0 : P.p12,
+                w13: (out_row === 0 || out_col === WIDTH - 1) ? 0 : P.p13,
+
+                w21: (out_col === 0) ? 0 : P.p21,
+                w22: P.p22,
+                w23: (out_col === WIDTH - 1) ? 0 : P.p23,
+
+                w31: (out_row === LENGTH - 1 || out_col === 0) ? 0 : P.p31,
+                w32: (out_row === LENGTH - 1) ? 0 : P.p32,
+                w33: (out_row === LENGTH - 1 || out_col === WIDTH - 1) ? 0 : P.p33
+            };
+
+            // Stage 1
+            const r1_min = min3(W.w11, W.w12, W.w13);
+            const r1_med = med3(W.w11, W.w12, W.w13);
+            const r1_max = max3(W.w11, W.w12, W.w13);
+
+            const r2_min = min3(W.w21, W.w22, W.w23);
+            const r2_med = med3(W.w21, W.w22, W.w23);
+            const r2_max = max3(W.w21, W.w22, W.w23);
+
+            const r3_min = min3(W.w31, W.w32, W.w33);
+            const r3_med = med3(W.w31, W.w32, W.w33);
+            const r3_max = max3(W.w31, W.w32, W.w33);
+
+            // Stage 2
+            const max_of_mins = max3(r1_min, r2_min, r3_min);
+            const med_of_meds = med3(r1_med, r2_med, r3_med);
+            const min_of_maxs = min3(r1_max, r2_max, r3_max);
+
+            // Stage 3
+            const final_median = med3(max_of_mins, med_of_meds, min_of_maxs);
+
+            return { W, r1_min, r1_med, r1_max, r2_min, r2_med, r2_max, r3_min, r3_med, r3_max, max_of_mins, med_of_meds, min_of_maxs, final_median };
+        }
+
+        // Advance 1 Clock Cycle
+        function stepClock() {
+            const valid_in = in_cnt < (WIDTH * LENGTH);
+            const in_row_idx = Math.floor(in_cnt / WIDTH);
+            const in_col_idx = in_cnt % WIDTH;
+            
+            const pixel_in = valid_in ? currentImage[in_row_idx][in_col_idx] : 0;
+            const do_shift = valid_in || (in_cnt === WIDTH * LENGTH && out_cnt < WIDTH * LENGTH);
+
+            const lb1_out = line_buf1[in_col];
+            const lb2_out = line_buf2[in_col];
+
+            const comb = computeCombinational();
+
+            if (do_shift) {
+                // Update Line Buffers
+                line_buf1[in_col] = pixel_in;
+                line_buf2[in_col] = lb1_out;
+
+                // Move write pointer
+                in_col = (in_col === WIDTH - 1) ? 0 : in_col + 1;
+
+                // Shift 3x3 Window Registers (P)
+                P.p31 = P.p32; P.p32 = P.p33; P.p33 = pixel_in;
+                P.p21 = P.p22; P.p22 = P.p23; P.p23 = lb1_out;
+                P.p11 = P.p12; P.p12 = P.p13; P.p13 = lb2_out;
+
+                if (valid_in) in_cnt++;
+
+                if (shift_cnt < WIDTH + 2) {
+                    shift_cnt++;
+                    valid_out = false;
+                } else {
+                    valid_out = true;
+                    pixel_out = comb.final_median;
+
+                    // Output pixel stored
+                    if (out_row < LENGTH && out_col < WIDTH) {
+                        outputMatrix[out_row][out_col] = pixel_out;
+                    }
+
+                    out_cnt++;
+
+                    if (out_col === WIDTH - 1) {
+                        out_col = 0;
+                        out_row++;
+                    } else {
+                        out_col++;
+                    }
+                }
+            }
+
+            clk++;
+            updateUI(pixel_in, valid_in, comb);
+
+            if (out_cnt >= WIDTH * LENGTH) {
+                pauseSim();
+            }
+        }
+
+        // Render State to UI
+        function updateUI(pixel_in, valid_in, comb) {
+            document.getElementById('reg-clk').innerText = clk;
+            document.getElementById('reg-shift-cnt').innerText = shift_cnt;
+            document.getElementById('reg-in-col').innerText = in_col;
+            document.getElementById('reg-in-cnt').innerText = `cnt: ${in_cnt}`;
+            document.getElementById('reg-out-pos').innerText = `(${out_row}, ${out_col})`;
+
+            // Flags
+            const flagIn = document.getElementById('flag-valid-in');
+            const flagOut = document.getElementById('flag-valid-out');
+            flagIn.className = `px-2 py-0.5 rounded text-[10px] ${valid_in ? 'bg-blue-600 text-white font-bold' : 'bg-slate-800 text-slate-500'}`;
+            flagOut.className = `px-2 py-0.5 rounded text-[10px] ${valid_out ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800 text-slate-500'}`;
+
+            document.getElementById('val-pixel-io').innerText = `IN: ${valid_in ? pixel_in : '--'} | OUT: ${valid_out ? pixel_out : '--'}`;
+
+            // Highlight Input Grid active stream position
+            for (let r = 0; r < LENGTH; r++) {
+                for (let c = 0; c < WIDTH; c++) {
+                    const cell = document.getElementById(`in-cell-${r}-${c}`);
+                    const currIdx = r * WIDTH + c;
+                    
+                    if (currIdx === in_cnt - 1 && valid_in) {
+                        cell.className = 'pixel-cell flex flex-col items-center justify-center p-2 rounded-lg border-2 border-blue-400 text-xs font-mono font-bold glow-active ring-2 ring-blue-500/50';
+                    } else {
+                        cell.className = 'pixel-cell flex flex-col items-center justify-center p-2 rounded-lg border border-slate-800 text-xs font-mono font-bold';
+                    }
+                }
+            }
+
+            // Line Buffers
+            document.getElementById('lb-pointer-col').innerText = in_col;
+            document.getElementById('lb1-val').innerText = `lb1_out = ${line_buf1[in_col]}`;
+            document.getElementById('lb2-val').innerText = `lb2_out = ${line_buf2[in_col]}`;
+
+            for (let c = 0; c < WIDTH; c++) {
+                const c1 = document.getElementById(`lb1-cell-${c}`);
+                const c2 = document.getElementById(`lb2-cell-${c}`);
+                c1.innerText = line_buf1[c];
+                c2.innerText = line_buf2[c];
+
+                if (c === in_col) {
+                    c1.className = 'p-1.5 bg-cyan-950 border-2 border-cyan-400 rounded text-center font-mono text-xs text-cyan-200 font-bold';
+                    c2.className = 'p-1.5 bg-purple-950 border-2 border-purple-400 rounded text-center font-mono text-xs text-purple-200 font-bold';
+                } else {
+                    c1.className = 'p-1.5 bg-slate-900 border border-slate-800 rounded text-center font-mono text-xs text-cyan-400/70';
+                    c2.className = 'p-1.5 bg-slate-900 border border-slate-800 rounded text-center font-mono text-xs text-purple-400/70';
+                }
+            }
+
+            // Raw P Matrix Update
+            Object.keys(P).forEach(key => {
+                const el = document.getElementById(key);
+                if (el) el.querySelector('.val').innerText = P[key];
+            });
+
+            // Masked W Matrix Update
+            Object.keys(comb.W).forEach(key => {
+                const el = document.getElementById(key);
+                if (el) {
+                    const isMasked = comb.W[key] !== P['p' + key.slice(1)];
+                    el.querySelector('.val').innerText = comb.W[key];
+                    if (isMasked) {
+                        el.className = 'p-2 bg-rose-950/40 border border-rose-500/50 rounded font-bold text-rose-300';
+                    } else if (key === 'w22') {
+                        el.className = 'p-2 bg-emerald-500/20 border border-emerald-500 rounded font-bold';
+                    } else {
+                        el.className = 'p-2 bg-slate-900 border border-slate-700 rounded';
+                    }
+                }
+            });
+
+            // Tree Stage 1
+            document.getElementById('r1-min').innerText = comb.r1_min;
+            document.getElementById('r1-med').innerText = comb.r1_med;
+            document.getElementById('r1-max').innerText = comb.r1_max;
+
+            document.getElementById('r2-min').innerText = comb.r2_min;
+            document.getElementById('r2-med').innerText = comb.r2_med;
+            document.getElementById('r2-max').innerText = comb.r2_max;
+
+            document.getElementById('r3-min').innerText = comb.r3_min;
+            document.getElementById('r3-med').innerText = comb.r3_med;
+            document.getElementById('r3-max').innerText = comb.r3_max;
+
+            // Tree Stage 2
+            document.getElementById('val-max-of-mins').innerText = comb.max_of_mins;
+            document.getElementById('val-med-of-meds').innerText = comb.med_of_meds;
+            document.getElementById('val-min-of-maxs').innerText = comb.min_of_maxs;
+
+            // Tree Stage 3
+            document.getElementById('val-final-median').innerText = comb.final_median;
+
+            // Render Output Matrix
+            for (let r = 0; r < LENGTH; r++) {
+                for (let c = 0; c < WIDTH; c++) {
+                    const outCell = document.getElementById(`out-cell-${r}-${c}`);
+                    const val = outputMatrix[r][c];
+
+                    if (val !== null) {
+                        outCell.style.backgroundColor = `rgb(${val}, ${val}, ${val})`;
+                        outCell.style.color = val > 128 ? '#000' : '#fff';
+                        outCell.innerHTML = `<span>${val}</span><span class="text-[9px] opacity-70">(${r},${c})</span>`;
+
+                        if (r === out_row - 1 && c === (out_col === 0 ? WIDTH - 1 : out_col - 1) && valid_out) {
+                            outCell.className = 'pixel-cell flex flex-col items-center justify-center p-2 rounded-lg border-2 border-emerald-400 text-xs font-mono font-bold glow-success';
+                        } else {
+                            outCell.className = 'pixel-cell flex flex-col items-center justify-center p-2 rounded-lg border border-slate-700 text-xs font-mono font-bold';
+                        }
+                    }
+                }
+            }
+        }
+
+        // Control Actions
+        function resetSim() {
+            pauseSim();
+            clk = 0;
+            out_col = 0;
+            out_row = 0;
+            in_col = 0;
+            in_cnt = 0;
+            out_cnt = 0;
+            shift_cnt = 0;
+            valid_out = false;
+            pixel_out = 0;
+
+            line_buf1.fill(0);
+            line_buf2.fill(0);
+
+            P = { p11: 0, p12: 0, p13: 0, p21: 0, p22: 0, p23: 0, p31: 0, p32: 0, p33: 0 };
+            outputMatrix = Array.from({ length: LENGTH }, () => new Array(WIDTH).fill(null));
+
+            initGrids();
+            updateUI(0, false, computeCombinational());
+        }
+
+        function playSim() {
+            if (isRunning) return;
+            isRunning = true;
+            document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+            document.getElementById('btn-play').className = 'bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl font-semibold transition flex items-center gap-2 text-sm';
+            
+            const speed = parseInt(document.getElementById('speed-range').value);
+            timer = setInterval(() => {
+                stepClock();
+            }, speed);
+        }
+
+        function pauseSim() {
+            isRunning = false;
+            if (timer) clearInterval(timer);
+            document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-play"></i> Run';
+            document.getElementById('btn-play').className = 'bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold transition flex items-center gap-2 text-sm';
+        }
+
+        // Event Listeners
+        document.getElementById('btn-step').addEventListener('click', () => {
+            pauseSim();
+            stepClock();
+        });
+
+        document.getElementById('btn-play').addEventListener('click', () => {
+            if (isRunning) pauseSim();
+            else playSim();
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', resetSim);
+
+        document.getElementById('select-pattern').addEventListener('change', (e) => {
+            const patternKey = e.target.value;
+            currentImage = JSON.parse(JSON.stringify(PRESETS[patternKey]));
+            resetSim();
+        });
+
+        document.getElementById('speed-range').addEventListener('input', () => {
+            if (isRunning) {
+                pauseSim();
+                playSim();
+            }
+        });
+
+        // Initialize on load
+        resetSim();
+    </script>
+</body>
+</html>
